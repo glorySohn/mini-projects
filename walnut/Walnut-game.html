@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>호두 찾기 게임</title>
+  <style>
+    :root{
+      --tile-size: 72px; /* 기본 크기(중간 난이도) */
+      --gap: 18px;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; padding:20px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; background:#f2f4f7; color:#222; -webkit-font-smoothing:antialiased;
+    }
+    .wrap{max-width:1100px; margin:0 auto;}
+
+    /* 상단 문구 */
+    .topbar{display:flex; justify-content:center; align-items:center; gap:12px; margin-bottom:18px}
+    .topbar .msg{font-size:1.6rem; font-weight:700; display:flex; align-items:center; gap:10px}
+    .topbar .msg .walnut-inline{width:36px; height:36px; display:inline-block}
+
+    /* 본문: 왼쪽(그리드) / 오른쪽(컨트롤) */
+    .main{display:flex; gap:20px}
+    .left{flex:1}
+    .right{width:180px; display:flex; flex-direction:column; gap:12px}
+
+    /* 3x5 그리드 */
+    .grid{display:grid; grid-template-columns:repeat(5, 1fr); gap:var(--gap); justify-items:center; align-items:center; padding:8px; background:transparent}
+    .tile{width:var(--tile-size); height:var(--tile-size); display:flex; align-items:center; justify-content:center; border-radius:10px; cursor:pointer; user-select:none; transition:transform .08s ease;}
+    .tile:active{transform:scale(.97)}
+    .tile svg{width:80%; height:80%; pointer-events:none}
+
+    /* 오른쪽 컨트롤 */
+    .controls{display:flex; flex-direction:column; gap:10px}
+    button{padding:10px 12px; border-radius:8px; border:1px solid #cfd6df; background:#fff; cursor:pointer; font-weight:600}
+    button:active{transform:translateY(1px)}
+    .difficulty{display:flex; gap:8px; justify-content:space-between}
+    .difficulty button{flex:1}
+    .difficulty button.active{background:#111; color:#fff;}
+
+    /* 결과 창 */
+    .result{height:120px; display:flex; align-items:center; justify-content:center; border-radius:10px; border:2px solid rgba(0,0,0,0.06); background:#fff; margin-top:8px; font-size:2.2rem; font-weight:800}
+
+    /* 빨간 원 포인터 */
+    .cursor-red{position:fixed; width:16px; height:16px; border-radius:50%; background:#ff3b30; pointer-events:none; transform:translate(-50%,-50%); display:none; box-shadow:0 0 8px rgba(255,59,48,0.6); z-index:9999}
+
+    /* 반응형 */
+    @media (max-width:820px){
+      .main{flex-direction:column}
+      .right{width:100%}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <!-- 상단 문구: '호두' 대신 그림으로 표현 -->
+    <div class="topbar">
+      <div class="msg">
+        <span class="walnut-inline" aria-hidden="true">
+          <!-- 간단한 호두 SVG 아이콘 (텍스트 대신 아이콘으로 사용) -->
+          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <path d="M50 15c18 0 28 10 28 22s-10 28-28 40c-18-12-28-22-28-40s10-22 28-22z" fill="#a66f2a"/>
+            <path d="M50 40c-6 2-10 6-12 10 4 4 8 7 12 9 4-2 8-5 12-9-2-4-6-8-12-10z" fill="#8b5a22" opacity="0.9"/>
+          </svg>
+        </span>
+        를 선택해주세요.
+      </div>
+    </div>
+
+    <div class="main">
+      <div class="left">
+        <!-- 3행 x 5열 그리드 (JS에서 동적으로 채움) -->
+        <div class="grid" id="grid" aria-label="아몬드와 호두 격자" role="grid"></div>
+
+        <!-- 결과창 -->
+        <div class="result" id="result" aria-live="polite"></div>
+      </div>
+
+      <div class="right">
+        <div class="controls">
+          <button id="startBtn">시작</button>
+          <button id="stopBtn">종료</button>
+
+          <div style="font-weight:700; margin-top:6px">난이도</div>
+          <div class="difficulty">
+            <button data-diff="high" id="diffHigh">상</button>
+            <button data-diff="mid" id="diffMid" class="active">중</button>
+            <button data-diff="low" id="diffLow">하</button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 빨간 포인터 요소 (JS로 위치 제어) -->
+  <div class="cursor-red" id="cursorRed" aria-hidden="true"></div>
+
+  <script>
+    /* ---------------------------  미리 정의된 SVG(아이콘)  --------------------------- */
+    function svgAlmond(){
+      return `
+        <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="아몬드">
+          <g transform="translate(50,50)">
+            <ellipse cx="0" cy="0" rx="30" ry="14" fill="#c68642"/>
+            <ellipse cx="-2" cy="-1" rx="28" ry="12" fill="#b47439" opacity="0.6"/>
+          </g>
+        </svg>`;
+    }
+    function svgWalnut(){
+      return `
+        <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="호두">
+          <g>
+            <path d="M50 15c18 0 28 10 28 22s-10 28-28 40c-18-12-28-22-28-40s10-22 28-22z" fill="#a66f2a"/>
+            <path d="M50 40c-6 2-10 6-12 10 4 4 8 7 12 9 4-2 8-5 12-9-2-4-6-8-12-10z" fill="#8b5a22" opacity="0.9"/>
+          </g>
+        </svg>`;
+    }
+
+    /* ---------------------------  게임 상태 변수들  --------------------------- */
+    const gridEl = document.getElementById('grid');
+    const resultEl = document.getElementById('result');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const diffHigh = document.getElementById('diffHigh');
+    const diffMid = document.getElementById('diffMid');
+    const diffLow = document.getElementById('diffLow');
+    const cursorRed = document.getElementById('cursorRed');
+
+    let playing = false;       // 게임 시작 여부
+    let walnutIndex = null;    // 호두가 위치한 인덱스 (0..14)
+
+    /* ---------------------------  그리드 생성 함수  --------------------------- */
+    function buildGrid(randomizeWalnut = true){
+      gridEl.innerHTML = '';
+      // 호두 위치를 랜덤으로 정해야하면 새로 정함
+      if(randomizeWalnut || walnutIndex === null){ walnutIndex = Math.floor(Math.random()*15); }
+
+      for(let i=0;i<25;i++){
+        const tile = document.createElement('div');
+        tile.className = 'tile';
+        tile.tabIndex = 0;
+        tile.setAttribute('role','button');
+        if(i === walnutIndex){
+          tile.dataset.type = 'walnut';
+          tile.innerHTML = svgWalnut();
+        } else {
+          tile.dataset.type = 'almond';
+          tile.innerHTML = svgAlmond();
+        }
+        gridEl.appendChild(tile);
+      }
+    }
+
+    /* 초기 그리드 렌더링 */
+    buildGrid(false);
+
+    /* ---------------------------  시작 / 종료 버튼 동작  --------------------------- */
+    startBtn.addEventListener('click', ()=>{
+      // 시작 시 호두 위치 재설정, 포인터 변환, 결과창 초기화
+      walnutIndex = Math.floor(Math.random()*15);
+      buildGrid(false);
+      playing = true;
+      cursorRed.style.display = 'block';
+      document.body.style.cursor = 'none';
+      resultEl.textContent = '';
+      resultEl.style.color = '';
+    });
+
+    stopBtn.addEventListener('click', ()=>{
+      playing = false;
+      cursorRed.style.display = 'none';
+      document.body.style.cursor = '';
+      resultEl.textContent = '게임 종료';
+      resultEl.style.color = '#111';
+    });
+
+    /* ---------------------------  난이도 버튼 (크기 조절) --------------------------- */
+    function setDifficulty(level){
+      diffHigh.classList.remove('active');
+      diffMid.classList.remove('active');
+      diffLow.classList.remove('active');
+      if(level === 'high'){
+        document.documentElement.style.setProperty('--tile-size','48px');
+        diffHigh.classList.add('active');
+      } else if(level === 'mid'){
+        document.documentElement.style.setProperty('--tile-size','72px');
+        diffMid.classList.add('active');
+      } else {
+        document.documentElement.style.setProperty('--tile-size','96px');
+        diffLow.classList.add('active');
+      }
+    }
+    // 기본 난이도: 중
+    setDifficulty('mid');
+
+    diffHigh.addEventListener('click', ()=> setDifficulty('high'));
+    diffMid.addEventListener('click', ()=> setDifficulty('mid'));
+    diffLow.addEventListener('click', ()=> setDifficulty('low'));
+
+    /* ---------------------------  클릭 판정 및 결과 표시  --------------------------- */
+    gridEl.addEventListener('click', (e)=>{
+      if(!playing) return; // 시작하지 않으면 무시
+      const tile = e.target.closest('.tile');
+      if(tile){
+        if(tile.dataset.type === 'walnut'){
+          showResult('성공', 'success');
+        } else {
+          showResult('실패', 'fail');
+        }
+        // 선택 후 포인터 원래대로 되돌리기(게임을 한 번에 한 번만 진행하도록)
+        playing = false;
+        cursorRed.style.display = 'none';
+        document.body.style.cursor = '';
+      } else {
+        // 격자 바깥을 클릭한 경우 -> 재시도
+        showResult('재시도', 'retry');
+      }
+    });
+
+    // 키보드 접근성: Enter로 선택 가능
+    gridEl.addEventListener('keydown', (e)=>{
+      if(!playing) return;
+      if(e.key === 'Enter'){
+        const tile = e.target.closest('.tile');
+        if(tile){
+          if(tile.dataset.type === 'walnut') showResult('성공','success');
+          else showResult('실패','fail');
+          playing = false; cursorRed.style.display='none'; document.body.style.cursor='';
+        }
+      }
+    });
+
+    function showResult(text, type){
+      resultEl.textContent = text;
+      if(type === 'success') resultEl.style.color = '#16a34a';
+      else if(type === 'fail') resultEl.style.color = '#ef4444';
+      else resultEl.style.color = '#111';
+    }
+
+    /* ---------------------------  빨간 원 포인터 움직임 제어  --------------------------- */
+    document.addEventListener('mousemove', (e)=>{
+      if(playing){
+        cursorRed.style.left = e.clientX + 'px';
+        cursorRed.style.top = e.clientY + 'px';
+      }
+    });
+
+    /* --- 추가: 창이 리사이즈/포커스 잃으면 포인터 숨기기 (안정성) --- */
+    window.addEventListener('blur', ()=>{ cursorRed.style.display = 'none'; document.body.style.cursor=''; playing = false; });
+
+  </script>
+</body>
+</html>
